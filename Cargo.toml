@@ -1,0 +1,10 @@
+[package]
+name = "desktop_gremlin"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image = "0.25.9"
+png = "0.18.0"
+sdl3 = { version = "0.16.2", features = ["unsafe_textures", "build-from-source"] }
+vcpkg = "0.2.15"
