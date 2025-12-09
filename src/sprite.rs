@@ -382,12 +382,14 @@ impl DesktopGremlin {
         let mut current_animation_name = String::new();
         let mut is_dragging = false;
         let mut is_lmb_down = false;
-        let (mut window_x, mut window_y) = (0, 0);
+        let (mut drag_start_x, mut drag_start_y) = (0.0, 0.0);
+
+        let mut c = 0;
         loop {
             if *should_exit.lock().unwrap() {
                 break;
             }
-            if let Some(event) = self.sdl.event_pump().unwrap().poll_event() {
+            while let Some(event) = self.sdl.event_pump().unwrap().poll_event() {
                 match event {
                     Event::Quit { .. } => {
                         let _ = task_tx_2.send(GremlinTask::PlayInterrupt("OUTRO".to_string()));
@@ -406,21 +408,30 @@ impl DesktopGremlin {
                             _ => (),
                         }
                     }
-                    Event::MouseMotion { xrel, yrel, .. } => {
+                    Event::MouseMotion { xrel, yrel, x, y, .. } => {
                         if is_lmb_down && !is_dragging {
                             is_dragging = true;
                             let _ = task_tx_2.send(GremlinTask::PlayInterrupt("GRAB".to_string()));
+                            task_queue.clear();
+                            (drag_start_x, drag_start_y) = (x, y);
+                        }
+                        if is_dragging && c % 2 == 1 {
+                            let (gremlin_x, gremlin_y) = get_window_pos(&self.canvas);
                             self.canvas
                                 .window_mut()
                                 .set_position(
-                                    WindowPos::Positioned(gremlin_x.saturating_add(xrel as i32)),
-                                    WindowPos::Positioned(gremlin_y.saturating_add(yrel as i32))
+                                    WindowPos::Positioned(
+                                        gremlin_x.saturating_add((x - drag_start_x) as i32)
+                                    ),
+                                    WindowPos::Positioned(
+                                        gremlin_y.saturating_add((y - drag_start_y) as i32)
+                                    )
                                 );
-                            gremlin_x = gremlin_x.saturating_add(xrel as i32);
-                            gremlin_y = gremlin_y.saturating_add(yrel as i32);
                         }
+                        // only move every odd frame because moving the window will trigger another mousemove event
+                        c = (c % 2) + 1;
                     }
-                    Event::MouseButtonUp { mouse_btn, x, y, .. } => {
+                    Event::MouseButtonUp { mouse_btn, .. } => {
                         match mouse_btn {
                             sdl3::mouse::MouseButton::Left => {
                                 // if render_rect.contains_point(Point::new(x as i32, y as i32)) {
@@ -516,6 +527,7 @@ impl DesktopGremlin {
                 if animation.current_frame + 1 == animation.sprite_sheet.frame_count {
                     should_check_for_action = true;
                     if "OUTRO" == &current_animation_name {
+                        println!("goodbye!");
                         break;
                     }
                 }
@@ -578,6 +590,7 @@ impl DesktopGremlin {
     }
 }
 
+#[derive(Debug, Clone)]
 enum GremlinTask {
     Play(String),
     PlayInterrupt(String),
@@ -594,6 +607,11 @@ pub fn into_opt_rect(f_rect: Option<FRect>) -> Option<Rect> {
     }
     None
 }
+
+pub fn get_window_pos(canvas: &Canvas<Window>) -> (i32, i32) {
+    canvas.window().position()
+}
+
 pub fn into_frect(rect: Rect) -> FRect {
     FRect { x: rect.x as f32, y: rect.y as f32, w: rect.w as f32, h: rect.h as f32 }
 }
