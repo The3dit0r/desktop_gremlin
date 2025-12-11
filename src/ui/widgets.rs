@@ -1,9 +1,9 @@
 use image::DynamicImage;
 
 use crate::{
-    sprite::{ GLOBAL_PIXEL_FORMAT, into_opt_rect },
-    ui::{ Composable, Notify, Render },
-    utils::{ get_writer, img_get_bytes_global },
+    sprite::{GLOBAL_PIXEL_FORMAT, into_opt_rect},
+    ui::{Composable, Notify, Render},
+    utils::{get_writer, img_get_bytes_global},
 };
 
 pub struct Image {
@@ -12,7 +12,9 @@ pub struct Image {
 
 impl Image {
     pub fn new(file_dir: &str) -> anyhow::Result<Self> {
-        Ok(Image { data: image::open(file_dir)? })
+        Ok(Image {
+            data: image::open(file_dir)?,
+        })
     }
 }
 
@@ -21,8 +23,7 @@ impl Render for Image {
     fn render(
         &self,
         texture: &mut sdl3::render::Texture,
-        rect: Option<sdl3::render::FRect>
-        // styles: Option<Vec<RenderStyle>>
+        rect: Option<sdl3::render::FRect>, // styles: Option<Vec<RenderStyle>>
     ) -> anyhow::Result<()> {
         texture.with_lock(into_opt_rect(rect), |buffer, _| {
             buffer.swap_with_slice(img_get_bytes_global(&self.data).unwrap().as_mut_slice())
@@ -34,15 +35,14 @@ impl Render for Image {
     fn render_canvas(
         &self,
         canvas: &mut sdl3::render::Canvas<sdl3::video::Window>,
-        rect: Option<sdl3::render::FRect>
-        // styles: Option<Vec<RenderStyle>>s
+        rect: Option<sdl3::render::FRect>, // styles: Option<Vec<RenderStyle>>s
     ) -> anyhow::Result<()> {
         let texture = canvas.texture_creator();
 
         let mut texture = texture.create_texture_static(
             GLOBAL_PIXEL_FORMAT,
             self.data.width(),
-            self.data.height()
+            self.data.height(),
         )?;
 
         let image_bytes = img_get_bytes_global(&self.data).unwrap();
@@ -52,9 +52,8 @@ impl Render for Image {
             None,
             image_bytes,
             // GLOBAL_PIXEL_FORMAT.byte_size_from_pitch_and_height(
-            (self.data.width() as usize) * GLOBAL_PIXEL_FORMAT.bytes_per_pixel()
-            // self.data.height() as usize
-            // )
+            (self.data.width() as usize) * GLOBAL_PIXEL_FORMAT.bytes_per_pixel(), // self.data.height() as usize
+                                                                                  // )
         )?;
 
         canvas.copy(&texture, None, rect)?;

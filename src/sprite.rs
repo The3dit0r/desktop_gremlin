@@ -1,13 +1,15 @@
 use std::{
     collections::{ HashMap, LinkedList, VecDeque },
     env,
+    ffi::{ c_str, c_void },
     fs::{ self, read_dir },
     hash::RandomState,
     io,
     path::{ Path, PathBuf },
+    ptr::null_mut,
     rc::Rc,
     str::FromStr,
-    sync::{ Arc, Mutex, mpsc },
+    sync::{ Arc, Mutex, mpsc::{ self, Sender } },
     thread,
     time::Duration,
 };
@@ -20,17 +22,61 @@ use sdl3::{
     // might move to winit & wgpu but,... ehhhhhhhhh too lazy.... i love sdl
 
     Sdl,
-    event::{ Event, WindowEvent },
+    event::Event,
     pixels::{ Color, PixelFormat },
     rect::{ Point, Rect },
     render::{ Canvas, FRect, Texture, TextureCreator },
-    video::{ Window, WindowBuilder, WindowContext, WindowFlags, WindowPos },
+    sys::{
+        properties::SDL_GetPointerProperty,
+        rect::SDL_Point,
+        video::{
+            SDL_GetWindowProperties,
+            SDL_HitTest,
+            SDL_HitTestResult,
+            SDL_PROP_WINDOW_WIN32_HWND_POINTER,
+            SDL_SetWindowHitTest,
+            SDL_Window,
+        },
+    },
+    video::{ Window, WindowBuilder, WindowContext, WindowFlags },
+};
+
+use windows::Win32::{
+    Foundation::{ COLORREF, HWND },
+    UI::WindowsAndMessaging::{
+        CreateWindowExW,
+        GWL_EXSTYLE,
+        GWL_STYLE,
+        GetWindowLongA,
+        GetWindowLongW,
+        LWA_COLORKEY,
+        SetLayeredWindowAttributes,
+        SetWindowLongA,
+        SetWindowLongW,
+        WS_BORDER,
+        WS_EX_COMPOSITED,
+        WS_EX_LAYERED,
+        WS_EX_TOPMOST,
+        WS_EX_TRANSPARENT,
+        WS_VISIBLE,
+    },
 };
 pub const GLOBAL_PIXEL_FORMAT: PixelFormat = PixelFormat::RGBA32;
 
 use crate::{
-    ui::{ Component, Div, Render, RenderStyle, UI, compose, div, p_fixed, widgets::Image },
-    utils::{ calculate_pix_from_parent, get_png_list, inflate },
+    ui::{
+        Component,
+        Composable,
+        Div,
+        Render,
+        RenderStyle,
+        UI,
+        compose,
+        div,
+        p_fixed,
+        widgets::Image,
+    },
+    utils::{ calculate_pix_from_parent, get_cursor_position, get_png_list, inflate },
 };
 
 #[derive(Debug, Clone)]
@@ -184,7 +230,7 @@ pub struct LaunchArguments {
     pub window_flags: Vec<WindowFlags>,
 }
 
-pub const GLOBAL_FRAMERATE: u32 = 30;
+pub const GLOBAL_FRAMERATE: u32 = 48;
 
 impl LaunchArguments {
     pub fn parse_from_args(args: env::Args) {
@@ -229,12 +275,22 @@ impl Default for LaunchArguments {
 }
 impl LaunchArguments {
     fn window_flags(&self) -> u32 {
+        if self.window_flags.len() == 0 {
+            return 0;
+        }
         let mut acc = self.window_flags[0];
         for flag in &self.window_flags {
             acc |= *flag;
         }
         acc.as_u32()
     }
+}
+unsafe extern "C" fn all_drag(
+    _: *mut SDL_Window,
+    _: *const SDL_Point,
+    _: *mut c_void
+) -> SDL_HitTestResult {
+    SDL_HitTestResult::DRAGGABLE
 }
 
 impl DesktopGremlin {
@@ -243,7 +299,7 @@ impl DesktopGremlin {
         let video = sdl.video()?;
         let launch_arguments = launch_arguments.unwrap_or_default();
 
-        let window = WindowBuilder::new(
+        let mut window = WindowBuilder::new(
             &video,
             &launch_arguments.title,
             launch_arguments.w,
@@ -252,9 +308,33 @@ impl DesktopGremlin {
             .set_window_flags(launch_arguments.window_flags())
             .build()?;
 
+        // window.set_mouse_grab(true);
+
+        #[cfg(target_os = "windows")]
+        unsafe {
+            let sdl_props = SDL_GetWindowProperties(window.raw());
+            let hwnd = SDL_GetPointerProperty(
+                sdl_props,
+                SDL_PROP_WINDOW_WIN32_HWND_POINTER,
+                std::ptr::null_mut()
+            );
+
+            let hwnd = HWND(hwnd);
+
+            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+
+            SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style | (WS_EX_LAYERED.0 as i32));
+
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0x00000000), 255, LWA_COLORKEY);
+        }
+
+        unsafe {
+            SDL_SetWindowHitTest(window.raw(), Some(all_drag), null_mut());
+        }
+
         let canvas = window.into_canvas();
-        let canvas_ref = Arc::new(&canvas);
         let texture_creator = canvas.texture_creator();
+
         let usable_bounds = video.get_primary_display()?.get_usable_bounds()?;
         Ok(DesktopGremlin {
             sdl,
@@ -268,82 +348,7 @@ impl DesktopGremlin {
 
     // spins up teh event lop
     pub fn go(mut self) {
-        let (gremlin_w, gremlin_h) = self.canvas.window().size();
-
-        let (mut gremlin_x, mut gremlin_y) = (
-            (self.display_context.usable_bounds.w - (gremlin_w as i32)) / 2,
-            (self.display_context.usable_bounds.h - (gremlin_h as i32)) / 2,
-        );
-
-        let mut ui = UI::default();
-
-        let mut child_div = Div::new();
-
-        // child_div.styles = vec![RenderStyle::BackgroundColor(Color::RED)].into();
-        let component = compose(*child_div);
-
-        let mut is_ui_dirty = Rc::new(false);
-
-        component.set_preferred_size((SizeUnit::Percentage(50), SizeUnit::Percentage(50)));
-        // component tree woks!1!
-        ui.root = ui.root
-            .set_preferred_size((SizeUnit::Percentage(100), SizeUnit::Percentage(100)))
-            .add_children(
-                vec![
-                    div()
-                        .add_child(
-                            compose(Div::default().style(RenderStyle::BackgroundColor(Color::GRAY)))
-                                .set_preferred_size((
-                                    SizeUnit::Percentage(100),
-                                    SizeUnit::Percentage(100),
-                                ))
-                                // .add_children(vec![div().set_preferred_size(SizeUnit::pix(12, 13))])
-                                .add_child(
-                                    compose(Div::default()).set_preferred_size(
-                                        SizeUnit::percentage(50, 50)
-                                    )
-                                )
-                        )
-                        .add_child(
-                            compose(
-                                Image::new(
-                                    r"C:\Users\ASUS\Documents\Projects\desktop_gremlin\assets\icons\expand.png"
-                                ).unwrap()
-                            )
-                        )
-                ]
-            );
-        // 30/11-04/12 i was ded
-
-        let _ = ui.render_canvas(&mut self.canvas, None);
-
-        // UI rendering logic i guess
-        let mut button = Button::default();
-        button.on_click.subscribe(|_| {
-            println!("Button clicked");
-        });
-        // let render_rect_size = calculate_pix_from_parent(
-        //     (window_w, window_h),
-        //     (button.width, button.height)
-        // );
-
-        // println!("{:?}", render_rect_size);
-        // let render_rect = {
-        //     Rect::new(
-        //         0,
-        //         window_h.saturating_sub(render_rect_size.1) as i32,
-        //         render_rect_size.0,
-        //         render_rect_size.1
-        //     )
-        // };
-        // button
-        //     .render_canvas(
-        //         &mut self.canvas,
-        //         Some(into_frect(render_rect))
-        //         // Some(vec![RenderStyle::BackgroundColor(Color::BLACK)])
-        //     )
-        //     .unwrap();
-        let mut should_exit = Arc::new(Mutex::new(false));
+        let should_exit = Arc::new(Mutex::new(false));
         let mut gremlin_texture: Option<Texture<'_>> = None;
         let (task_tx, task_rx): (
             mpsc::Sender<GremlinTask>,
@@ -363,8 +368,9 @@ impl DesktopGremlin {
             thread::sleep(Duration::from_millis(2000));
 
             while *should_exit.lock().unwrap() == false {
-                thread::sleep(Duration::from_millis(2000));
+                thread::sleep(Duration::from_millis(200));
             }
+            // let _ = task_tx.send(GremlinTask::Goto(mx as i32, my as i32));
             0
         });
 
@@ -374,7 +380,7 @@ impl DesktopGremlin {
             )
             .ok();
         let mut should_check_for_action = true;
-        let mut action_interruptable = true;
+
         let mut move_target: Option<Point> = None;
         let velocity = 20;
         let mut task_queue = VecDeque::new();
@@ -383,65 +389,62 @@ impl DesktopGremlin {
         let mut is_dragging = false;
         let mut is_lmb_down = false;
         let (mut drag_start_x, mut drag_start_y) = (0.0, 0.0);
+        let mut event_pump = self.sdl.event_pump().unwrap();
 
-        let mut c = 0;
+        let mut move_towards_cursor = false;
+        let mut should_check_drag = false;
+
         loop {
             if *should_exit.lock().unwrap() {
                 break;
             }
-            while let Some(event) = self.sdl.event_pump().unwrap().poll_event() {
+
+            while let Some(event) = event_pump.poll_event() {
                 match event {
                     Event::Quit { .. } => {
                         let _ = task_tx_2.send(GremlinTask::PlayInterrupt("OUTRO".to_string()));
-
                         // *should_exit.lock().unwrap() = true;
                     }
-                    Event::MouseButtonDown { mouse_btn, x, y, .. } => {
+                    Event::MouseButtonDown { mouse_btn, .. } => {
                         match mouse_btn {
                             sdl3::mouse::MouseButton::Left => {
-                                // if render_rect.contains_point(Point::new(x as i32, y as i32)) {
-                                //     button.on_click.set(());
-                                // }
-
                                 is_lmb_down = true;
                             }
                             _ => (),
                         }
                     }
-                    Event::MouseMotion { xrel, yrel, x, y, .. } => {
+                    Event::MouseMotion { x, y, .. } => {
                         if is_lmb_down && !is_dragging {
                             is_dragging = true;
                             let _ = task_tx_2.send(GremlinTask::PlayInterrupt("GRAB".to_string()));
                             task_queue.clear();
                             (drag_start_x, drag_start_y) = (x, y);
                         }
-                        if is_dragging && c % 2 == 1 {
+                        if is_dragging && should_check_drag {
                             let (gremlin_x, gremlin_y) = get_window_pos(&self.canvas);
                             self.canvas
                                 .window_mut()
                                 .set_position(
-                                    WindowPos::Positioned(
+                                    sdl3::video::WindowPos::Positioned(
                                         gremlin_x.saturating_add((x - drag_start_x) as i32)
                                     ),
-                                    WindowPos::Positioned(
+                                    sdl3::video::WindowPos::Positioned(
                                         gremlin_y.saturating_add((y - drag_start_y) as i32)
                                     )
                                 );
                         }
                         // only move every odd frame because moving the window will trigger another mousemove event
-                        c = (c % 2) + 1;
+                        should_check_drag = !should_check_drag;
                     }
+
                     Event::MouseButtonUp { mouse_btn, .. } => {
                         match mouse_btn {
                             sdl3::mouse::MouseButton::Left => {
-                                // if render_rect.contains_point(Point::new(x as i32, y as i32)) {
-                                //     button.on_click.set(());
-                                // }
-
                                 if !is_dragging && is_lmb_down {
                                     let _ = task_tx_2.send(
                                         GremlinTask::PlayInterrupt("CLICK".to_string())
                                     );
+                                    move_towards_cursor = !move_towards_cursor;
                                 }
                                 if is_dragging && is_lmb_down {
                                     let _ = task_tx_2.send(
@@ -461,11 +464,6 @@ impl DesktopGremlin {
             }
             // thread::sleep(Duration::from_millis(500));
 
-            if *is_ui_dirty {
-                let _ = ui.render_canvas(&mut self.canvas, None);
-                self.canvas.present();
-            }
-
             let mut task_board = None;
 
             // check for tasks and append to task queue
@@ -474,7 +472,6 @@ impl DesktopGremlin {
                     task_board = Some(task);
                     break;
                 }
-
                 task_queue.push_back(task);
             }
 
@@ -515,6 +512,10 @@ impl DesktopGremlin {
                 }
             }
 
+            // handle gremlin movement
+            if move_towards_cursor {
+            }
+
             // draws the next frame and update frame counter
             if
                 let Some(gremlin) = &mut self.current_gremlin &&
@@ -538,6 +539,10 @@ impl DesktopGremlin {
                 thread::sleep(Duration::from_secs_f32(1.0 / (GLOBAL_FRAMERATE as f32)));
             }
         }
+    }
+
+    fn init_ui() -> Component {
+        div()
     }
 
     fn load_gremlin(&mut self, gremlin_txt_path: String) -> Result<Gremlin, GremlinLoadError> {
@@ -588,6 +593,27 @@ impl DesktopGremlin {
             Err(GremlinLoadError::FsError(None))
         }
     }
+}
+
+pub fn get_move_direction(
+    cursor_position: Point,
+    gremlin_position: Point
+) -> (DirectionX, DirectionY) {
+    let dir_x = if cursor_position.x < gremlin_position.x {
+        DirectionX::Left
+    } else if cursor_position.x > gremlin_position.x {
+        DirectionX::Right
+    } else {
+        DirectionX::None
+    };
+    let dir_y = if cursor_position.y < gremlin_position.y {
+        DirectionY::Up
+    } else if cursor_position.y > gremlin_position.y {
+        DirectionY::Down
+    } else {
+        DirectionY::None
+    };
+    (dir_x, dir_y)
 }
 
 #[derive(Debug, Clone)]

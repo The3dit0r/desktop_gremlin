@@ -1,16 +1,16 @@
-use std::{ collections::HashSet };
+use std::collections::HashSet;
 
 use bad_signals::signals::signals::Signal;
 use sdl3::{
     pixels::Color,
-    rect::{ Point, Rect },
-    render::{ Canvas, FRect, Texture },
+    rect::{Point, Rect},
+    render::{Canvas, FRect, Texture},
     video::Window,
 };
 pub mod widgets;
 
 use crate::{
-    sprite::{ SizeUnit, into_frect, into_opt_rect, into_rect },
+    sprite::{SizeUnit, into_frect, into_opt_rect, into_rect},
     utils::calculate_pix_from_parent,
 };
 
@@ -110,8 +110,7 @@ impl Render for Div {
     fn render(
         &self,
         texture: &mut sdl3::render::Texture,
-        rect: Option<sdl3::render::FRect>
-        // styles: Option<Vec<RenderStyle>>
+        rect: Option<sdl3::render::FRect>, // styles: Option<Vec<RenderStyle>>
     ) -> anyhow::Result<()> {
         // todo!()
         //no auto layouts for now ...
@@ -142,30 +141,32 @@ impl Render for Div {
                         background_color = *color;
                         println!("{:?}", color);
                     }
-                    RenderStyle::Position(position) => {
-                        match position {
-                            Position::Relative(size_unit, size_unit1) => {
-                                rendering_rect.x += calculate_pix_from_parent(
-                                    (texture.width(), texture.height()),
-                                    (*size_unit, SizeUnit::Pixel(0))
-                                ).0 as f32;
-                                rendering_rect.y += calculate_pix_from_parent(
-                                    (texture.width(), texture.height()),
-                                    (SizeUnit::Pixel(0), *size_unit1)
-                                ).1 as f32;
-                            }
-                            Position::Fixed(size_unit, size_unit1) => {
-                                rendering_rect.x = calculate_pix_from_parent(
-                                    (texture.width(), texture.height()),
-                                    (*size_unit, SizeUnit::Pixel(0))
-                                ).0 as f32;
-                                rendering_rect.y = calculate_pix_from_parent(
-                                    (texture.width(), texture.height()),
-                                    (SizeUnit::Pixel(0), *size_unit1)
-                                ).1 as f32;
-                            }
+                    RenderStyle::Position(position) => match position {
+                        Position::Relative(size_unit, size_unit1) => {
+                            rendering_rect.x += calculate_pix_from_parent(
+                                (texture.width(), texture.height()),
+                                (*size_unit, SizeUnit::Pixel(0)),
+                            )
+                            .0 as f32;
+                            rendering_rect.y += calculate_pix_from_parent(
+                                (texture.width(), texture.height()),
+                                (SizeUnit::Pixel(0), *size_unit1),
+                            )
+                            .1 as f32;
                         }
-                    }
+                        Position::Fixed(size_unit, size_unit1) => {
+                            rendering_rect.x = calculate_pix_from_parent(
+                                (texture.width(), texture.height()),
+                                (*size_unit, SizeUnit::Pixel(0)),
+                            )
+                            .0 as f32;
+                            rendering_rect.y = calculate_pix_from_parent(
+                                (texture.width(), texture.height()),
+                                (SizeUnit::Pixel(0), *size_unit1),
+                            )
+                            .1 as f32;
+                        }
+                    },
                     _ => {}
                 }
             }
@@ -187,8 +188,7 @@ impl Render for Div {
     fn render_canvas(
         &self,
         canvas: &mut sdl3::render::Canvas<sdl3::video::Window>,
-        rect: Option<sdl3::render::FRect>
-        // styles: Option<Vec<RenderStyle>>
+        rect: Option<sdl3::render::FRect>, // styles: Option<Vec<RenderStyle>>
     ) -> anyhow::Result<()> {
         // todo!()
         let draw_color = canvas.draw_color();
@@ -242,18 +242,26 @@ impl Default for UI {
 fn render_tree(
     component: &Component,
     texture: &mut Texture,
-    parent_rect: Rect
+    parent_rect: Rect,
 ) -> anyhow::Result<()> {
     let render_rect_size = calculate_pix_from_parent(
         (parent_rect.w as u32, parent_rect.h as u32),
-        (component.preferred_size.0, component.preferred_size.1)
+        (component.preferred_size.0, component.preferred_size.1),
     );
 
     println!("{:?}", render_rect_size);
     let render_rect = {
-        Rect::new(/*offsets in the future maybe*/ 0, 0, render_rect_size.0, render_rect_size.1)
+        Rect::new(
+            /*offsets in the future maybe*/ 0,
+            0,
+            render_rect_size.0,
+            render_rect_size.1,
+        )
     };
-    component.rendered_by.as_ref().render(texture, Some(into_frect(render_rect)))?;
+    component
+        .rendered_by
+        .as_ref()
+        .render(texture, Some(into_frect(render_rect)))?;
     for child in &component.children {
         render_tree(child, texture, render_rect)?;
     }
@@ -263,16 +271,19 @@ fn render_tree(
 fn render_tree_canvas(
     component: &Component,
     canvas: &mut Canvas<Window>,
-    parent_rect: Rect
+    parent_rect: Rect,
 ) -> anyhow::Result<()> {
     let render_rect_size = calculate_pix_from_parent(
         (parent_rect.w as u32, parent_rect.h as u32),
-        (component.preferred_size.0, component.preferred_size.1)
+        (component.preferred_size.0, component.preferred_size.1),
     );
 
     println!("{:?}", render_rect_size);
     let render_rect = { Rect::new(0, 0, render_rect_size.0, render_rect_size.1) };
-    component.rendered_by.as_ref().render_canvas(canvas, Some(into_frect(render_rect)))?;
+    component
+        .rendered_by
+        .as_ref()
+        .render_canvas(canvas, Some(into_frect(render_rect)))?;
 
     for child in &component.children {
         render_tree_canvas(child, canvas, render_rect)?;
@@ -285,17 +296,17 @@ impl Render for UI {
     fn render(
         &self,
         texture: &mut Texture,
-        parent_rect: Option<FRect>
-        // styles: Option<Vec<RenderStyle>>
+        parent_rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
     ) -> anyhow::Result<()> {
         render_tree(
             &self.root,
             texture,
-            into_rect(
-                parent_rect.unwrap_or(
-                    FRect::new(0.0, 0.0, texture.width() as f32, texture.height() as f32)
-                )
-            )
+            into_rect(parent_rect.unwrap_or(FRect::new(
+                0.0,
+                0.0,
+                texture.width() as f32,
+                texture.height() as f32,
+            ))),
         )?;
 
         Ok(())
@@ -304,22 +315,17 @@ impl Render for UI {
     fn render_canvas(
         &self,
         canvas: &mut Canvas<Window>,
-        rect: Option<FRect>
-        // styles: Option<Vec<RenderStyle>>
+        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
     ) -> anyhow::Result<()> {
         render_tree_canvas(
             &self.root,
             canvas,
-            into_rect(
-                rect.unwrap_or(
-                    FRect::new(
-                        0.0,
-                        0.0,
-                        canvas.window().size().0 as f32,
-                        canvas.window().size().1 as f32
-                    )
-                )
-            )
+            into_rect(rect.unwrap_or(FRect::new(
+                0.0,
+                0.0,
+                canvas.window().size().0 as f32,
+                canvas.window().size().1 as f32,
+            ))),
         )?;
         Ok(())
     }
@@ -333,8 +339,7 @@ impl Render for Button {
     fn render(
         &self,
         texture: &mut Texture,
-        rect: Option<FRect>
-        // styles: Option<Vec<RenderStyle>>
+        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
     ) -> anyhow::Result<()> {
         self.div.render(texture, rect)?;
         Ok(())
@@ -343,8 +348,7 @@ impl Render for Button {
     fn render_canvas(
         &self,
         canvas: &mut Canvas<Window>,
-        rect: Option<FRect>
-        // styles: Option<Vec<RenderStyle>>s
+        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>s
     ) -> anyhow::Result<()> {
         self.div.render_canvas(canvas, rect)?;
         Ok(())
@@ -354,7 +358,9 @@ impl Render for Button {
 impl Notify for Button {
     fn notify(&self, event: ComponentEvent) {
         match event {
-            ComponentEvent::OnMouseDown { global_pointer_location } => {
+            ComponentEvent::OnMouseDown {
+                global_pointer_location,
+            } => {
                 println!("{:?}", global_pointer_location);
             }
             _ => {}
@@ -371,15 +377,9 @@ impl Composable for Button {}
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum ComponentEvent {
-    OnMouseDown {
-        global_pointer_location: Point,
-    },
-    OnMouseHover {
-        pointer_location: Point,
-    },
-    OnMouseUp {
-        pointer_location: Point,
-    },
+    OnMouseDown { global_pointer_location: Point },
+    OnMouseHover { pointer_location: Point },
+    OnMouseUp { pointer_location: Point },
 }
 
 pub trait Render {
@@ -388,8 +388,7 @@ pub trait Render {
     fn render(
         &self,
         texture: &mut Texture,
-        rect: Option<FRect>
-        // styles: Option<Vec<RenderStyle>>
+        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
     ) -> anyhow::Result<()>;
 
     /// render_canvas() utilizes SDL's Render API, abstracting away platform specific
@@ -397,7 +396,6 @@ pub trait Render {
     fn render_canvas(
         &self,
         canvas: &mut Canvas<Window>,
-        rect: Option<FRect>
-        // styles: Option<Vec<RenderStyle>>s
+        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>s
     ) -> anyhow::Result<()>;
 }
