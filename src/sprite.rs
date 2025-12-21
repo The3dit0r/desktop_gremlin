@@ -376,6 +376,7 @@ impl<'a> DesktopGremlin<'a> {
                 r"C:\Users\ASUS\Documents\Projects\desktop_gremlin\assets\Gremlins\Mambo\config.txt".to_string()
             )
             .ok();
+
         let mut should_check_for_action = true;
 
         let mut move_target: Option<Point> = None;
@@ -389,29 +390,6 @@ impl<'a> DesktopGremlin<'a> {
         let mut event_pump = self.sdl.event_pump().unwrap();
         let mut last_moved_at = Instant::now();
 
-        let idle: Option<(Rc<Texture<'_>>, Animator)> = if
-            let Some(gremlin) = &mut self.current_gremlin &&
-            let Some(animation) = gremlin.animation_map.get("IDLE")
-        {
-            match
-                (
-                    <&AnimationProperties as TryInto<Animation>>::try_into(animation),
-                    animation.try_into(),
-                )
-            {
-                (Ok(animation), Ok(animator)) => {
-                    Some((
-                        Rc::new(
-                            animation.sprite_sheet.into_texture(&self.texture_creator).unwrap()
-                        ),
-                        animator,
-                    ))
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
 
         let mut move_towards_cursor = false;
         let mut should_check_drag = false;
@@ -575,16 +553,12 @@ impl<'a> DesktopGremlin<'a> {
                                 animation_name.as_str()
                             )
                         {
-                            if animation_name == "IDLE".to_string() && let Some(ref idle) = idle {
-                                let _ = gremlin_texture.insert(idle.0.clone());
-                                gremlin.animator = Some(idle.1.clone());
-                            } else if
+                            if
                                 let Some((ref animator, ref texture)) = lookup_cache(
                                     &animation_name,
                                     &texture_cache
                                 )
                             {
-                                println!("Loaded from cache: {:?}", &animation_name);
 
                                 let _ = gremlin.animator.insert(animator.clone());
                                 let _ = gremlin_texture.insert(texture.clone());
@@ -594,7 +568,6 @@ impl<'a> DesktopGremlin<'a> {
                                         animation_props
                                     )
                             {
-                                println!("Loaded from disk: {:?}", &animation_name);
                                 let texture_rc = Rc::new(
                                     animation.sprite_sheet
                                         .into_texture(&self.texture_creator)
@@ -948,15 +921,11 @@ fn print_cache<'a>(cache: &TextureCache<'a>) {
 }
 
 fn cache_texture<'a>(name: String, texture: TextureCacheItem<'a>, cache: &mut TextureCache<'a>) {
-    if name == "IDLE".to_string() {
-        return;
-    }
     match cache.len() {
         CACHE_CAPACITY.. => {
             cache.pop_front();
         }
         _ => (),
     }
-    print_cache(cache);
     cache.push_back((name, texture));
 }
