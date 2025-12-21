@@ -3,6 +3,7 @@ use std::{
     collections::{ HashMap, LinkedList, VecDeque },
     env,
     ffi::{ c_str, c_void },
+    fmt::Display,
     fs::{ self, read_dir },
     hash::RandomState,
     io,
@@ -194,18 +195,19 @@ impl TryInto<Animation> for &AnimationProperties {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Gremlin {
+#[derive(Default)]
+pub struct Gremlin<'a> {
     name: String,
     // map between animation name and directory
     animation_map: HashMap<String, AnimationProperties>,
     metadata: HashMap<String, String>,
     animator: Option<Animator>,
+    texture_cache: TextureCache<'a>,
 }
 
-pub struct DesktopGremlin {
+pub struct DesktopGremlin<'a> {
     sdl: Sdl,
-    current_gremlin: Option<Gremlin>,
+    current_gremlin: Option<Gremlin<'a>>,
     canvas: Canvas<Window>,
     texture_creator: TextureCreator<WindowContext>,
     should_exit: Arc<Mutex<bool>>,
@@ -285,8 +287,8 @@ unsafe extern "C" fn all_drag(
     SDL_HitTestResult::NORMAL
 }
 
-impl DesktopGremlin {
-    pub fn new(launch_arguments: Option<LaunchArguments>) -> Result<DesktopGremlin> {
+impl<'a> DesktopGremlin<'a> {
+    pub fn new(launch_arguments: Option<LaunchArguments>) -> Result<DesktopGremlin<'a>> {
         let sdl = sdl3::init()?;
         let video = sdl.video()?;
         let launch_arguments = launch_arguments.unwrap_or_default();
@@ -341,7 +343,10 @@ impl DesktopGremlin {
     // spins up teh event lop
     pub fn go(mut self) {
         let should_exit = Arc::new(Mutex::new(false));
+
+        let mut texture_cache: TextureCache = Default::default();
         let mut gremlin_texture: Option<Rc<Texture<'_>>> = None;
+
         let (task_tx, task_rx): (
             mpsc::Sender<GremlinTask>,
             mpsc::Receiver<GremlinTask>,
@@ -383,6 +388,7 @@ impl DesktopGremlin {
         let (mut drag_start_x, mut drag_start_y) = (0.0, 0.0);
         let mut event_pump = self.sdl.event_pump().unwrap();
         let mut last_moved_at = Instant::now();
+
         let idle: Option<(Rc<Texture<'_>>, Animator)> = if
             let Some(gremlin) = &mut self.current_gremlin &&
             let Some(animation) = gremlin.animation_map.get("IDLE")
@@ -409,6 +415,7 @@ impl DesktopGremlin {
 
         let mut move_towards_cursor = false;
         let mut should_check_drag = false;
+
         let (mut gremlin_x, mut gremlin_y) = (0, 0);
         loop {
             while let Some(event) = event_pump.poll_event() {
@@ -490,7 +497,10 @@ impl DesktopGremlin {
 
             // handle gremlin movement
             if !is_dragging && move_towards_cursor && let Some(move_target) = move_target {
-                let (dir_x, dir_y) = get_move_direction(move_target, gremlin_position);
+                let (dir_x, dir_y) = get_move_direction(
+                    move_target,
+                    win_to_rect(self.canvas.window())
+                );
                 let tan =
                     ((gremlin_position.y - move_target.y) as f32) /
                     ((gremlin_position.x - move_target.x) as f32);
@@ -569,23 +579,40 @@ impl DesktopGremlin {
                                 let _ = gremlin_texture.insert(idle.0.clone());
                                 gremlin.animator = Some(idle.1.clone());
                             } else if
+                                let Some((ref animator, ref texture)) = lookup_cache(
+                                    &animation_name,
+                                    &texture_cache
+                                )
+                            {
+                                println!("Loaded from cache: {:?}", &animation_name);
+
+                                let _ = gremlin.animator.insert(animator.clone());
+                                let _ = gremlin_texture.insert(texture.clone());
+                            } else if
                                 let Ok(animation) =
                                     <&AnimationProperties as TryInto<Animation>>::try_into(
                                         animation_props
                                     )
                             {
-                                println!("Loaded from disk: {:?}", animation_name);
-                                gremlin_texture = Some(
-                                    Rc::new(
-                                        animation.sprite_sheet
-                                            .into_texture(&self.texture_creator)
-                                            .unwrap()
-                                    )
+                                println!("Loaded from disk: {:?}", &animation_name);
+                                let texture_rc = Rc::new(
+                                    animation.sprite_sheet
+                                        .into_texture(&self.texture_creator)
+                                        .unwrap()
                                 );
-                                gremlin.animator = animation_props.try_into().ok();
-                                should_check_for_action = false;
-                                current_animation_name = animation_name;
+                                gremlin_texture = Some(texture_rc.clone());
+                                let animator = animation_props.try_into().ok();
+                                gremlin.animator = animator;
+                                if let Some(ref animator) = gremlin.animator {
+                                    cache_texture(
+                                        animation_name.clone(),
+                                        (animator.clone(), texture_rc),
+                                        &mut texture_cache
+                                    );
+                                }
                             }
+                            should_check_for_action = false;
+                            current_animation_name = animation_name;
                         }
                     }
                     GremlinTask::Goto(x, y) => {
@@ -628,7 +655,10 @@ impl DesktopGremlin {
         div()
     }
 
-    fn load_gremlin(&mut self, gremlin_txt_path: String) -> Result<Gremlin, GremlinLoadError> {
+    fn load_gremlin<'gremlin>(
+        &mut self,
+        gremlin_txt_path: String
+    ) -> Result<Gremlin<'gremlin>, GremlinLoadError> {
         let path = Path::new(gremlin_txt_path.as_str());
         let gremlin_txt = fs::read_to_string(path)?;
         let mut gremlin = Gremlin::default();
@@ -678,27 +708,23 @@ impl DesktopGremlin {
     }
 }
 
-pub fn get_move_direction(
-    cursor_position: Point,
-    gremlin_position: Point
-) -> (DirectionX, DirectionY) {
-    let cursor_rect = inflate(cursor_position, 300, 300);
-    if cursor_rect.contains_point(gremlin_position) {
+pub fn get_move_direction(cursor_position: Point, gremlin_rect: Rect) -> (DirectionX, DirectionY) {
+    if gremlin_rect.contains_point(cursor_position) {
         return (DirectionX::None, DirectionY::None);
     }
 
-    let dir_x = if cursor_rect.left() > gremlin_position.x {
+    let dir_x = if cursor_position.x > gremlin_rect.right() {
         DirectionX::Right
-    } else if cursor_rect.right() < gremlin_position.x {
+    } else if cursor_position.x < gremlin_rect.left() {
         DirectionX::Left
     } else {
         DirectionX::None
     };
 
-    let dir_y = if gremlin_position.y < cursor_rect.top() {
-        DirectionY::Down
-    } else if gremlin_position.y > cursor_rect.bottom() {
+    let dir_y = if cursor_position.y < gremlin_rect.top() {
         DirectionY::Up
+    } else if cursor_position.y > gremlin_rect.bottom() {
+        DirectionY::Down
     } else {
         DirectionY::None
     };
@@ -892,4 +918,45 @@ impl Animator {
             sprite_height
         )
     }
+}
+
+fn win_to_rect(window: &Window) -> Rect {
+    let (x, y) = window.position();
+    let (w, h) = window.size();
+    Rect::new(x, y, w, h)
+}
+
+type TextureCache<'a> = VecDeque<(String, TextureCacheItem<'a>)>;
+type TextureCacheItem<'a> = (Animator, Rc<Texture<'a>>);
+fn lookup_cache<'a>(animation_name: &str, cache: &'a TextureCache) -> Option<TextureCacheItem<'a>> {
+    for (name, result) in cache {
+        if *name == animation_name {
+            return Some(result.clone());
+        }
+    }
+    None
+}
+
+const CACHE_CAPACITY: usize = 10;
+
+fn print_cache<'a>(cache: &TextureCache<'a>) {
+    let mut res = String::new();
+    for (name, _) in cache {
+        res += &(name.to_owned() + " ");
+    }
+    println!("{}", res)
+}
+
+fn cache_texture<'a>(name: String, texture: TextureCacheItem<'a>, cache: &mut TextureCache<'a>) {
+    if name == "IDLE".to_string() {
+        return;
+    }
+    match cache.len() {
+        CACHE_CAPACITY.. => {
+            cache.pop_front();
+        }
+        _ => (),
+    }
+    print_cache(cache);
+    cache.push_back((name, texture));
 }
