@@ -1,18 +1,15 @@
 use std::{
-    cell::{ Ref, RefCell },
     collections::{ HashMap, LinkedList, VecDeque },
     env,
-    ffi::{ c_str, c_void },
-    fmt::Display,
-    fs::{ self, read_dir },
-    hash::RandomState,
+    ffi::c_void,
+    fs::{ self },
     io,
     path::{ Path, PathBuf },
     ptr::null_mut,
     rc::Rc,
     str::FromStr,
-    sync::{ Arc, Mutex, mpsc::{ self, Sender } },
-    thread,
+    sync::{ Arc, Mutex, mpsc::{ self, Receiver, Sender } },
+    thread::{ self, JoinHandle },
     time::{ Duration, Instant },
 };
 
@@ -43,6 +40,7 @@ use sdl3::{
     video::{ Window, WindowBuilder, WindowContext, WindowFlags },
 };
 
+#[cfg(target_os = "windows")]
 use windows::Win32::{
     Foundation::{ COLORREF, HWND },
     UI::WindowsAndMessaging::{
@@ -69,7 +67,13 @@ use crate::{
         p_fixed,
         widgets::Image,
     },
-    utils::{ calculate_pix_from_parent, get_cursor_position, get_png_list, inflate },
+    utils::{
+        calculate_pix_from_parent,
+        get_cursor_position,
+        get_png_list,
+        inflate,
+        resize_image_to_window,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -146,7 +150,7 @@ pub enum SpriteError {
 }
 
 #[derive(Clone, Debug, Hash, Default)]
-struct AnimationProperties {
+pub struct AnimationProperties {
     pub sprite_name: String,
     pub sprite_path: Option<PathBuf>,
     pub sprite_count: u32,
@@ -212,6 +216,7 @@ pub struct DesktopGremlin<'a> {
     texture_creator: TextureCreator<WindowContext>,
     should_exit: Arc<Mutex<bool>>,
     display_context: DisplayContext,
+    async_loads: Vec<JoinHandle<Result<Animation, GremlinLoadError>>>,
 }
 
 pub struct DisplayContext {
@@ -293,7 +298,7 @@ impl<'a> DesktopGremlin<'a> {
         let video = sdl.video()?;
         let launch_arguments = launch_arguments.unwrap_or_default();
 
-        let mut window = WindowBuilder::new(
+        let window = WindowBuilder::new(
             &video,
             &launch_arguments.title,
             launch_arguments.w,
@@ -337,6 +342,7 @@ impl<'a> DesktopGremlin<'a> {
             canvas,
             should_exit: Arc::new(Mutex::new(false)),
             display_context: DisplayContext { usable_bounds },
+            async_loads: Default::default(),
         })
     }
 
@@ -344,7 +350,7 @@ impl<'a> DesktopGremlin<'a> {
     pub fn go(mut self) {
         let should_exit = Arc::new(Mutex::new(false));
 
-        let mut texture_cache: TextureCache = Default::default();
+        let texture_cache: Arc<Mutex<TextureCache>> = Default::default();
         let mut gremlin_texture: Option<Rc<Texture<'_>>> = None;
 
         let (task_tx, task_rx): (
@@ -368,7 +374,6 @@ impl<'a> DesktopGremlin<'a> {
                 thread::sleep(Duration::from_millis(200));
             }
             // let _ = task_tx.send(GremlinTask::Goto(mx as i32, my as i32));
-            0
         });
 
         self.current_gremlin = self
@@ -389,7 +394,6 @@ impl<'a> DesktopGremlin<'a> {
         let (mut drag_start_x, mut drag_start_y) = (0.0, 0.0);
         let mut event_pump = self.sdl.event_pump().unwrap();
         let mut last_moved_at = Instant::now();
-
 
         let mut move_towards_cursor = false;
         let mut should_check_drag = false;
@@ -475,10 +479,14 @@ impl<'a> DesktopGremlin<'a> {
 
             // handle gremlin movement
             if !is_dragging && move_towards_cursor && let Some(move_target) = move_target {
-                let (dir_x, dir_y) = get_move_direction(
-                    move_target,
-                    win_to_rect(self.canvas.window())
-                );
+                let (dir_x, dir_y) = get_move_direction(move_target, {
+                    let mut win_rect = win_to_rect(self.canvas.window());
+                    if win_rect.contains_point(move_target) {
+                        win_rect.resize(win_rect.width() + 100, win_rect.height() + 100);
+                        println!("{:?}", win_rect);
+                    }
+                    win_rect
+                });
                 let tan =
                     ((gremlin_position.y - move_target.y) as f32) /
                     ((gremlin_position.x - move_target.x) as f32);
@@ -538,6 +546,7 @@ impl<'a> DesktopGremlin<'a> {
                 task_board = task_queue.pop_front();
             }
 
+            let mut cache_hit_index: Option<usize> = None;
             if let Some(task_board) = task_board && let Some(gremlin) = &mut self.current_gremlin {
                 // update the texture according to the task
                 match task_board {
@@ -553,37 +562,50 @@ impl<'a> DesktopGremlin<'a> {
                                 animation_name.as_str()
                             )
                         {
-                            if
-                                let Some((ref animator, ref texture)) = lookup_cache(
-                                    &animation_name,
-                                    &texture_cache
-                                )
-                            {
-
+                            let cache_lookup = {
+                                lookup_cache(
+                                    animation_name.as_str(),
+                                    &texture_cache.lock().unwrap()
+                                ).map(|a| { a.0 })
+                            };
+                            if let Some(index) = cache_lookup {
+                                rearrange_cache(index, &mut texture_cache.lock().unwrap());
+                                let lock = &texture_cache.lock().unwrap();
+                                let (animator, texture) = &lock.back().unwrap().1;
                                 let _ = gremlin.animator.insert(animator.clone());
                                 let _ = gremlin_texture.insert(texture.clone());
+                                let _ = cache_hit_index.insert(index);
                             } else if
-                                let Ok(animation) =
+                                let Ok(mut animation) =
                                     <&AnimationProperties as TryInto<Animation>>::try_into(
                                         animation_props
                                     )
                             {
+                                if animation.properties.sprite_count > 80 {
+                                    animation.sprite_sheet.image = resize_image_to_window(
+                                        animation.sprite_sheet.image,
+                                        self.canvas.window(),
+                                        animation_props.clone()
+                                    );
+                                }
+
                                 let texture_rc = Rc::new(
                                     animation.sprite_sheet
                                         .into_texture(&self.texture_creator)
                                         .unwrap()
                                 );
                                 gremlin_texture = Some(texture_rc.clone());
-                                let animator = animation_props.try_into().ok();
+                                let animator = Some((&animation).into());
                                 gremlin.animator = animator;
                                 if let Some(ref animator) = gremlin.animator {
                                     cache_texture(
                                         animation_name.clone(),
                                         (animator.clone(), texture_rc),
-                                        &mut texture_cache
+                                        &mut texture_cache.lock().unwrap()
                                     );
                                 }
                             }
+
                             should_check_for_action = false;
                             current_animation_name = animation_name;
                         }
@@ -591,6 +613,10 @@ impl<'a> DesktopGremlin<'a> {
                     GremlinTask::Goto(x, y) => {
                         move_target = Some(Point::new(x, y));
                     }
+                    GremlinTask::LoadAsync(animation) => {
+                        let mut texture_cache = texture_cache.clone();
+                    }
+                    _ => {}
                 }
             }
 
@@ -627,6 +653,8 @@ impl<'a> DesktopGremlin<'a> {
     fn init_ui() -> Component {
         div()
     }
+
+    fn handle_sdl_events(&mut self, event_pump: &mut sdl3::EventPump) {}
 
     fn load_gremlin<'gremlin>(
         &mut self,
@@ -709,6 +737,8 @@ enum GremlinTask {
     Play(String),
     PlayInterrupt(String),
     Goto(i32, i32),
+    LoadAsync(AnimationProperties),
+    Die,
 }
 
 // impl Into<Rect> for FRect {
@@ -881,6 +911,23 @@ impl TryFrom<&AnimationProperties> for Animator {
     }
 }
 
+impl From<&Animation> for Animator {
+    fn from(value: &Animation) -> Self {
+        Self {
+            current_frame: Default::default(),
+            texture_size: (value.sprite_sheet.image.width(), value.sprite_sheet.image.height()),
+            sprite_size: (
+                value.sprite_sheet.image.width().div_ceil(DEFAULT_COLUMN_COUNT),
+                value.sprite_sheet.image
+                    .height()
+                    .div_ceil(value.properties.sprite_count.div_ceil(DEFAULT_COLUMN_COUNT)),
+            ),
+            animation_properties: value.properties.clone(),
+            column_count: DEFAULT_COLUMN_COUNT,
+        }
+    }
+}
+
 impl Animator {
     pub fn get_frame_rect(&self) -> Rect {
         let (sprite_width, sprite_height) = self.sprite_size;
@@ -901,13 +948,23 @@ fn win_to_rect(window: &Window) -> Rect {
 
 type TextureCache<'a> = VecDeque<(String, TextureCacheItem<'a>)>;
 type TextureCacheItem<'a> = (Animator, Rc<Texture<'a>>);
-fn lookup_cache<'a>(animation_name: &str, cache: &'a TextureCache) -> Option<TextureCacheItem<'a>> {
-    for (name, result) in cache {
-        if *name == animation_name {
-            return Some(result.clone());
-        }
+fn lookup_cache<'a>(
+    animation_name: &str,
+    cache: &'a TextureCache
+) -> Option<(usize, TextureCacheItem<'a>)> {
+    cache
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|a| a.1.0 == animation_name)
+        .map(|a| (a.0, a.1.1.clone()))
+}
+
+// rearrange to purge cache later with a LRU policy
+fn rearrange_cache(index: usize, cache: &mut TextureCache) {
+    if let Some(item) = cache.remove(index) {
+        cache.push_back(item);
     }
-    None
 }
 
 const CACHE_CAPACITY: usize = 10;
@@ -928,4 +985,105 @@ fn cache_texture<'a>(name: String, texture: TextureCacheItem<'a>, cache: &mut Te
         _ => (),
     }
     cache.push_back((name, texture));
+}
+
+struct AsyncAnimationLoader {
+    thread_handle: Option<JoinHandle<()>>,
+    pub task_tx: Sender<GremlinTask>,
+    pub result_rx: Receiver<(String, Animation)>,
+}
+
+impl AsyncAnimationLoader {
+    pub fn new() -> Self {
+        let (task_tx, task_rx): (Sender<GremlinTask>, Receiver<GremlinTask>) = mpsc::channel();
+        let (result_tx, result_rx): (
+            Sender<(String, Animation)>,
+            Receiver<(String, Animation)>,
+        ) = mpsc::channel();
+
+        Self {
+            thread_handle: Some(
+                thread::spawn(move || {
+                    let handle_list: Arc<
+                        Mutex<Vec<JoinHandle<(String, Animation)>>>
+                    > = Default::default();
+                    let checker_handle_list = Arc::clone(&handle_list);
+                    let (heartbeat_tx, heartbeat_rx): (
+                        Sender<bool>,
+                        Receiver<bool>,
+                    ) = mpsc::channel();
+                    let heartbeat_tx_loader = heartbeat_tx.clone();
+
+                    // the checker
+                    thread::spawn(move || {
+                        while let Ok(true) = heartbeat_rx.recv() {
+                            let mut finished_handles: Vec<usize> = Default::default();
+                            let mut handle_list = checker_handle_list.lock().unwrap();
+                            if handle_list.len() > 0 {
+                                for (index, handle) in handle_list.iter().enumerate() {
+                                    if handle.is_finished() {
+                                        finished_handles.push(index);
+                                    }
+                                }
+                            }
+
+                            for handle_indx in finished_handles.iter() {
+                                if let Ok(result) = handle_list.remove(*handle_indx).join() {
+                                    let _ = result_tx.send(result);
+                                }
+                            }
+
+                            finished_handles.clear();
+                        }
+                    });
+
+                    // the processor
+                    thread::spawn(move || {
+                        while let Ok(task) = task_rx.recv() {
+                            match task {
+                                GremlinTask::LoadAsync(animation_properties) => {
+                                    handle_list
+                                        .lock()
+                                        .unwrap()
+                                        .push(
+                                            thread::spawn(move || {
+                                                (
+                                                    animation_properties.sprite_name.clone(),
+                                                    <&AnimationProperties as TryInto<Animation>>
+                                                        ::try_into(&animation_properties)
+                                                        .unwrap(),
+                                                )
+                                            })
+                                        );
+                                }
+                                GremlinTask::Die => {
+                                    let _ = heartbeat_tx.send(false);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+                    loop {
+                        if let Ok(_) = heartbeat_tx_loader.send(true) {
+                            thread::sleep(Duration::from_micros(500));
+                        } else {
+                            break;
+                        }
+                    }
+                })
+            ),
+            task_tx,
+            result_rx,
+        }
+    }
+}
+
+impl Drop for AsyncAnimationLoader {
+    fn drop(&mut self) {
+        self.task_tx.send(GremlinTask::Die);
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
+    }
 }

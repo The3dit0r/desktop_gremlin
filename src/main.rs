@@ -6,7 +6,7 @@ pub mod ui;
 pub mod utils;
 
 fn main() -> Result<()> {
-    let mut app = DesktopGremlin::new(None)?;
+    let app = DesktopGremlin::new(None)?;
     app.go();
     Ok(())
 }
