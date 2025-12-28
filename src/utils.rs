@@ -9,8 +9,11 @@ use sdl3::{
     video::Window,
 };
 
-use crate::gremlin::{
-    AnimationProperties, DEFAULT_COLUMN_COUNT, GLOBAL_PIXEL_FORMAT, SizeUnit, SpriteError,
+use crate::{
+    events::MouseButton,
+    gremlin::{
+        AnimationProperties, DEFAULT_COLUMN_COUNT, GLOBAL_PIXEL_FORMAT, SizeUnit, SpriteError,
+    },
 };
 
 pub fn inflate(point: Point, x: u32, y: u32) -> Rect {
@@ -168,4 +171,31 @@ pub enum DirectionY {
     None,
     Up,
     Down,
+}
+
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct MouseKeysState {
+    pub left: bool,
+    pub middle: bool,
+    pub right: bool,
+}
+
+impl MouseKeysState {
+    pub fn set_button(&mut self, button: &MouseButton, state: bool) {
+        match button {
+            MouseButton::Left => self.left = state,
+            MouseButton::Right => self.right = state,
+            MouseButton::Middle => self.middle = state,
+            _ => {}
+        }
+    }
+
+    pub fn is_active(&self, button: &MouseButton) -> bool {
+        match button {
+            MouseButton::Left => self.left,
+            MouseButton::Right => self.right,
+            MouseButton::Middle => self.middle,
+            _ => false,
+        }
+    }
 }

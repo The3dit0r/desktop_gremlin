@@ -215,12 +215,7 @@ pub struct DesktopGremlin {
     should_check_for_action: bool,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub struct MouseKeysState {
-    pub left: bool,
-    pub middle: bool,
-    pub right: bool,
-}
+
 
 pub struct DisplayContext {
     pub usable_bounds: Rect,

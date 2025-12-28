@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-use std::{collections::HashSet, time::Instant};
-
 use super::Behavior;
 use crate::behavior::ContextData;
 use crate::events::{Event, EventData, MouseButton};
-use crate::gremlin::{DesktopGremlin, GremlinTask, MouseKeysState, get_window_pos};
+use crate::gremlin::{DesktopGremlin, GremlinTask, get_window_pos};
+use crate::utils::MouseKeysState;
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct GremlinDrag {

@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use sdl3::{EventPump, event::Event as SdlEvent};
 
-use crate::gremlin::MouseKeysState;
+use crate::utils::MouseKeysState;
 
 // this is to implement eq and hash for event enum
 #[derive(PartialEq, Eq, Hash, Debug)]
@@ -14,7 +14,7 @@ pub enum Event {
     MouseButtonUp { mouse_btn: MouseButton },
     Window { win_event: WindowEvent },
     DragStart { mouse_btn: MouseButton },
-    Drag { x: i32, y: i32 },
+    Drag { mouse_btn: MouseButton },
     DragEnd { mouse_btn: MouseButton },
     Unhandled,
 }
@@ -33,7 +33,7 @@ pub enum EventData {
     },
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub enum MouseButton {
     Left,
     Right,
@@ -98,6 +98,33 @@ struct MouseState {
     dragging: MouseKeysState,
 }
 
+impl MouseState {
+    pub fn any_down(&self) -> bool {
+        self.down.left || self.down.right || self.down.middle
+    }
+    pub fn any_drag(&self) -> bool {
+        self.dragging.left || self.dragging.right || self.dragging.middle
+    }
+
+    pub fn reset_key(&mut self, button: MouseButton) {
+        match button {
+            MouseButton::Left => {
+                self.down.left = false;
+                self.dragging.left = false;
+            }
+            MouseButton::Middle => {
+                self.down.middle = false;
+                self.dragging.middle = false;
+            }
+            MouseButton::Right => {
+                self.down.right = false;
+                self.dragging.right = false;
+            }
+            _ => {}
+        }
+    }
+}
+
 impl EventMediator {
     pub fn pump_events(
         &mut self,
@@ -105,60 +132,75 @@ impl EventMediator {
     ) -> HashMap<Event, Option<EventData>> {
         let mut event_set: HashMap<Event, Option<EventData>> = Default::default();
         for event in sdl_event_pump.poll_iter() {
-            let mut parsed_ev = None;
-            let mut ev_data = None;
+            let mut parsed_ev: Option<Event> = None;
+            let mut ev_data: Option<EventData> = None;
             match event {
                 SdlEvent::MouseButtonDown {
                     mouse_btn, x, y, ..
-                } => match mouse_btn {
-                    sdl3::mouse::MouseButton::Left => {
-                        self.mouse.down.left = true;
-                    }
-                    sdl3::mouse::MouseButton::Middle => {
-                        self.mouse.down.middle = true;
-                    }
-                    sdl3::mouse::MouseButton::Right => {
-                        self.mouse.down.right = true;
-                    }
-                    _ => {}
-                },
+                } => {
+                    self.mouse.down.set_button(&(mouse_btn.into()), true);
+                }
+
                 SdlEvent::MouseButtonUp {
                     mouse_btn, x, y, ..
                 } => {
-                    if !self.mouse.dragging.left
-                        || !self.mouse.dragging.middle
-                        || !self.mouse.dragging.right
-                    {
+                    if !self.mouse.any_drag() {
                         parsed_ev = Some(Event::Click {
+                            mouse_btn: mouse_btn.into(),
+                        });
+                        ev_data = Some(EventData::Coordinate { x, y });
+                    } else if self.mouse.dragging.is_active(&(mouse_btn.into())) {
+                        parsed_ev = Some(Event::DragEnd {
                             mouse_btn: mouse_btn.into(),
                         });
                         ev_data = Some(EventData::Coordinate { x, y });
                     }
 
-                    match mouse_btn {
-                        sdl3::mouse::MouseButton::Left => {
-                            self.mouse.down.left = false;
-                            self.mouse.dragging.left = false;
-                        }
-                        sdl3::mouse::MouseButton::Middle => {
-                            self.mouse.down.middle = false;
-                            self.mouse.dragging.middle = false;
-                        }
-                        sdl3::mouse::MouseButton::Right => {
-                            self.mouse.down.right = false;
-                            self.mouse.dragging.right = false;
-                        }
-                        _ => {}
-                    }
+                    self.mouse.reset_key(mouse_btn.into());
                 }
-                SdlEvent::MouseMotion { mousestate, .. } => {
-                    if !self.mouse.dragging.left
-                        || !self.mouse.dragging.middle
-                        || !self.mouse.dragging.right
-                    {}
+                SdlEvent::MouseMotion {
+                    x, y, xrel, yrel, ..
+                } => {
+                    for (btn, is_down, is_dragging) in [
+                        (
+                            MouseButton::Left,
+                            self.mouse.down.left,
+                            self.mouse.dragging.left,
+                        ),
+                        (
+                            MouseButton::Middle,
+                            self.mouse.down.middle,
+                            self.mouse.dragging.middle,
+                        ),
+                        (
+                            MouseButton::Right,
+                            self.mouse.down.right,
+                            self.mouse.dragging.right,
+                        ),
+                    ] {
+                        if is_down && !is_dragging {
+                            event_set.insert(
+                                Event::DragStart { mouse_btn: btn },
+                                Some(EventData::Coordinate { x, y }),
+                            );
+                            self.mouse.dragging.set_button(&btn, true);
+                        }
+                        if is_down && is_dragging {
+                            event_set.insert(
+                                Event::Drag { mouse_btn: btn },
+                                Some(EventData::Difference {
+                                    rel_x: xrel,
+                                    rel_y: yrel,
+                                    x,
+                                    y,
+                                }),
+                            );
+                        }
+                    }
                 }
                 _ => {}
             }
+
             if let Some(parsed_ev) = parsed_ev {
                 event_set.insert(parsed_ev, ev_data);
             } else {
