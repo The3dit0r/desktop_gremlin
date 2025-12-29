@@ -22,6 +22,10 @@ impl Behavior for GremlinClick {
                 .task_channel
                 .0
                 .send(GremlinTask::PlayInterrupt("CLICK".to_string()));
+            let _ = application
+                .task_channel
+                .0
+                .send(GremlinTask::Play("IDLE".to_string()));
         }
     }
 }

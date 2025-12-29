@@ -1,4 +1,4 @@
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 use crate::events::{Event, EventData};
 use crate::gremlin::DesktopGremlin;
@@ -8,11 +8,11 @@ mod drag;
 mod movement;
 mod render;
 
+pub use click::*;
 pub use common::*;
 pub use drag::*;
 pub use movement::*;
 pub use render::*;
-pub use click::*;
 /// Behaviors define actions that the gremlins/application can take and can modify the state of the application/gremlin.<br>
 /// This is heavily inspired by Unity's **`MonoBehavior`** superclass. <br>
 /// Their lifecycle is as follows:

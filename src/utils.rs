@@ -70,7 +70,7 @@ pub fn resize_image_to_window(
     window: &Window,
     animation_properties: AnimationProperties,
 ) -> DynamicImage {
-    let scale_factor = (3, 5);
+    let scale_factor = (1, 1);
     let (sprite_width, sprite_height) = window.size();
     let (target_width, target_height) = (
         (DEFAULT_COLUMN_COUNT * sprite_width * scale_factor.0) / scale_factor.1,
@@ -84,7 +84,7 @@ pub fn resize_image_to_window(
     image.resize(
         target_width,
         target_height,
-        image::imageops::FilterType::CatmullRom,
+        image::imageops::FilterType::Triangle,
     )
 }
 
@@ -134,7 +134,7 @@ pub fn _get_writer<T: Fn(&mut (u8, u8, u8, u8))>(a: T) -> impl Fn(&mut [u8], usi
         }
     }
 }
-/// SAFETY: Only use this function when the Sdl context is still in scope and available.
+/// *SAFETY*: Only use this function when the Sdl context is still in scope and available.
 pub fn get_cursor_position() -> (f32, f32) {
     unsafe {
         let (mut x, mut y): (f32, f32) = (0.0, 0.0);
@@ -228,20 +228,28 @@ impl TextureCache {
         }
     }
 
-    pub fn _print(&self) {
+    pub fn print(&self) {
         let mut res = String::new();
-        for (name, _) in &self.data {
-            res += &(name.to_owned() + " ");
+        for (name, rc) in &self.data {
+            res += format!(
+                "| {} strong:{} weak:{}",
+                name,
+                Rc::strong_count(&rc.1),
+                Rc::weak_count(&rc.1)
+            )
+            .as_str();
         }
-        println!("{}", res)
+        println!("{}", (res))
     }
     pub fn cache(&mut self, name: String, texture: TextureCacheItem) {
         match &self.data.len() {
             CACHE_CAPACITY.. => {
                 self.data.pop_front();
             }
-            _ => (),
-        }
+            _ => {}
+        };
+        self.print();
+
         self.data.push_back((name, texture));
     }
 

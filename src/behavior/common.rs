@@ -9,6 +9,11 @@ impl Behavior for CommonBehavior {
             .task_channel
             .0
             .send(crate::gremlin::GremlinTask::Play("INTRO".to_string()));
+
+        let _ = application
+            .task_channel
+            .0
+            .send(crate::gremlin::GremlinTask::Play("IDLE".to_string()));
     }
 
     fn update(

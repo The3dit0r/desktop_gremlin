@@ -17,6 +17,7 @@ pub struct GremlinMovement {
     is_dragging: bool,
     current_position: (i32, i32),
     last_moved_at: Instant,
+    should_check_position: bool,
 }
 
 impl Default for GremlinMovement {
@@ -27,6 +28,7 @@ impl Default for GremlinMovement {
             is_dragging: Default::default(),
             current_position: Default::default(),
             last_moved_at: Instant::now(),
+            should_check_position: true,
         }
     }
 }
@@ -121,13 +123,15 @@ impl super::Behavior for GremlinMovement {
             self.last_moved_at = Instant::now();
         }
 
-        if let Some(Some(EventData::Coordinate { x, y })) = context.events.get(&Event::Window {
-            win_event: crate::events::WindowEvent::Moved,
-        }) {
-            let (x_ref, y_ref) = &mut self.current_position;
-            *x_ref = *x;
-            *y_ref = *y;
+        if self.should_check_position
+            && let Some(Some(EventData::Coordinate { x, y })) = context.events.get(&Event::Window {
+                win_event: crate::events::WindowEvent::Moved,
+            })
+        {
+            self.current_position.0 = *x;
+            self.current_position.1 = *y;
         }
+        self.should_check_position = !self.should_check_position;
     }
 }
 

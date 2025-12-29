@@ -2,7 +2,8 @@ use image::DynamicImage;
 
 use crate::{
     gremlin::{GLOBAL_PIXEL_FORMAT, into_opt_rect},
-    ui::{Composable, Notify, Render}, utils::img_get_bytes_global,
+    ui::{Composable, Notify, Render},
+    utils::img_get_bytes_global,
 };
 
 pub struct Image {

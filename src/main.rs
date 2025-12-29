@@ -1,10 +1,4 @@
-use crate::{
-    behavior::{
-        Behavior, CommonBehavior, GremlinClick, GremlinDrag, GremlinMovement, GremlinRender,
-    },
-    gremlin::DesktopGremlin,
-    runtime::DGRuntime,
-};
+use crate::{behavior::*, runtime::DGRuntime};
 
 mod behavior;
 mod events;
@@ -13,6 +7,7 @@ mod io;
 mod runtime;
 mod ui;
 mod utils;
+
 fn main() {
     let mut rt = DGRuntime::default();
 
@@ -23,6 +18,7 @@ fn main() {
         GremlinRender::new(),
         GremlinClick::new(),
     ];
+
     rt.register_behaviors(behaviors);
     rt.go();
 }

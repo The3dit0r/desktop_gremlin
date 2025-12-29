@@ -21,13 +21,13 @@ impl DGRuntime {
     }
 
     pub fn go(&mut self) {
-        let (heartbeat_tx, heartbeat_rx) = mpsc::channel::<()>();
+        let (heartbeat_tx, heartbeat_rx) = mpsc::sync_channel::<()>(1);
 
         let heartbeat = thread::spawn(move || {
             while let Ok(_) = heartbeat_tx.send(()) {
                 thread::sleep(Duration::from_secs_f64(1.0 / (GLOBAL_FRAMERATE as f64)));
             }
-            println!("Heartbeat stopped");
+            println!("Heartbeat stopped, someone get the zapper!");
         });
 
         if let Ok(mut application) = DesktopGremlin::new(None) {
@@ -45,7 +45,7 @@ impl DGRuntime {
             }
 
             while let Ok(_) = heartbeat_rx.recv() {
-                let events: std::collections::HashMap<crate::events::Event, Option<crate::events::EventData>> = event_mediator.pump_events(&mut event_pump);
+                let events = event_mediator.pump_events(&mut event_pump);
                 let context = ContextData { events: events };
                 for behavior in self.behaviors.iter_mut() {
                     behavior.update(&mut application, &context);

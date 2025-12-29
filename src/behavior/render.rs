@@ -66,6 +66,7 @@ impl Behavior for GremlinRender {
                                 .lookup(animation_name.clone())
                                 .map(|a| a.0)
                         };
+
                         if let Some(index) = cache_lookup {
                             self.texture_cache.lock().unwrap().rearrange(index);
                             // unwrap safety: the mutex is guaranteed to not be poisoned and released after the rearrange cache function goes out of scope
@@ -92,8 +93,12 @@ impl Behavior for GremlinRender {
                                     .into_texture(&application.texture_creator)
                                     .unwrap(),
                             );
-                            self.gremlin_texture = Some(texture_rc.clone());
+
+                            self.gremlin_texture.insert(texture_rc.clone());
+
                             let animator = Some((&animation).into());
+                            drop(animation);
+
                             gremlin.animator = animator;
                             if let Some(ref animator) = gremlin.animator {
                                 self.texture_cache.lock().unwrap().cache(

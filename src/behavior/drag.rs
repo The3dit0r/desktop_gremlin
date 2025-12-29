@@ -25,10 +25,6 @@ impl Behavior for GremlinDrag {
                 .task_channel
                 .0
                 .send(GremlinTask::PlayInterrupt("GRAB".to_string()));
-            // let _ = application
-            //     .task_channel
-            //     .0
-            //     .send(GremlinTask::Play("IDLE".to_string()));
 
             application.task_queue.clear();
 
@@ -50,6 +46,19 @@ impl Behavior for GremlinDrag {
                 );
             }
             self.should_move = !self.should_move;
+        }
+
+        if let Some(_) = context.events.get(&Event::DragEnd {
+            mouse_btn: MouseButton::Left,
+        }) {
+            let _ = application
+                .task_channel
+                .0
+                .send(GremlinTask::PlayInterrupt("PAT".to_string()));
+            let _ = application
+                .task_channel
+                .0
+                .send(GremlinTask::Play("IDLE".to_string()));
         }
     }
 
