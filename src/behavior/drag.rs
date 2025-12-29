@@ -18,26 +18,24 @@ impl GremlinDrag {
 
 impl Behavior for GremlinDrag {
     fn update(&mut self, application: &mut DesktopGremlin, context: &ContextData) {
-        
-        if let Some(EventData::Coordinate { x, y }) = context.events.get(&Event::DragStart {
+        if let Some(Some(EventData::FCoordinate { x, y })) = context.events.get(&Event::DragStart {
             mouse_btn: MouseButton::Left,
         }) {
             let _ = application
                 .task_channel
                 .0
                 .send(GremlinTask::PlayInterrupt("GRAB".to_string()));
-            let _ = application
-                .task_channel
-                .0
-                .send(GremlinTask::Play("IDLE".to_string()));
+            // let _ = application
+            //     .task_channel
+            //     .0
+            //     .send(GremlinTask::Play("IDLE".to_string()));
 
             application.task_queue.clear();
 
             (self.drag_start_x, self.drag_start_y) = (x.round() as i32, y.round() as i32);
         }
 
-
-        if let Some(EventData::Difference { x, y, .. }) = context.events.get(&Event::Drag {
+        if let Some(Some(EventData::Difference { x, y, .. })) = context.events.get(&Event::Drag {
             mouse_btn: MouseButton::Left,
         }) {
             if self.should_move {

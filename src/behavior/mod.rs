@@ -2,10 +2,17 @@ use std::collections::{HashMap, HashSet};
 
 use crate::events::{Event, EventData};
 use crate::gremlin::DesktopGremlin;
-pub mod drag;
-pub mod movement;
-pub mod click;
+mod click;
+mod common;
+mod drag;
+mod movement;
+mod render;
 
+pub use common::*;
+pub use drag::*;
+pub use movement::*;
+pub use render::*;
+pub use click::*;
 /// Behaviors define actions that the gremlins/application can take and can modify the state of the application/gremlin.<br>
 /// This is heavily inspired by Unity's **`MonoBehavior`** superclass. <br>
 /// Their lifecycle is as follows:
@@ -24,5 +31,5 @@ pub trait Behavior {
 
 #[derive(Debug, Default)]
 pub struct ContextData {
-    events: HashMap<Event, EventData>,
+    pub events: HashMap<Event, Option<EventData>>,
 }

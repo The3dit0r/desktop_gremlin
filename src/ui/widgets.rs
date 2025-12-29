@@ -51,7 +51,7 @@ impl Render for Image {
         texture.update(
             None,
             image_bytes,
-            (self.data.width() as usize) * GLOBAL_PIXEL_FORMAT.bytes_per_pixel()
+            (self.data.width() as usize) * GLOBAL_PIXEL_FORMAT.bytes_per_pixel(),
         )?;
 
         canvas.copy(&texture, None, rect)?;

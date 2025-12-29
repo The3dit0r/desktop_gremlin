@@ -1,15 +1,20 @@
-use crate::{behavior::Behavior, gremlin::GremlinTask};
-
+use crate::{
+    behavior::Behavior,
+    gremlin::{DesktopGremlin, GremlinTask},
+};
+#[derive(Default)]
 pub struct GremlinClick {}
+
+impl GremlinClick {
+    pub fn new() -> Box<Self> {
+        Default::default()
+    }
+}
 
 impl Behavior for GremlinClick {
     fn setup(&mut self, _: &mut crate::gremlin::DesktopGremlin) {}
 
-    fn update(
-        &mut self,
-        application: &mut crate::gremlin::DesktopGremlin,
-        context: &super::ContextData,
-    ) {
+    fn update(&mut self, application: &mut DesktopGremlin, context: &super::ContextData) {
         if let Some(_) = context.events.get(&crate::events::Event::Click {
             mouse_btn: crate::events::MouseButton::Left,
         }) {

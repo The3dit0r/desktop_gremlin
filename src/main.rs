@@ -1,30 +1,29 @@
-use std::collections::HashSet;
-
 use crate::{
-    behavior::{Behavior, drag::GremlinDrag},
+    behavior::{
+        Behavior, CommonBehavior, GremlinClick, GremlinDrag, GremlinMovement, GremlinRender,
+    },
     gremlin::DesktopGremlin,
+    runtime::DGRuntime,
 };
 
-pub mod behavior;
+mod behavior;
 mod events;
-pub mod gremlin;
+mod gremlin;
 mod io;
-pub mod ui;
-pub mod utils;
+mod runtime;
+mod ui;
+mod utils;
 
 fn main() {
-    let mut app = DesktopGremlin::new(None).unwrap();
-    let mut behaviors: Vec<Box<dyn Behavior>> = vec![GremlinDrag::new()];
-    // app.register_behaviors(behaviors);
-    // move this to the go() function after refactor
-    loop {
-        app.update();
-        for behavior in behaviors.iter_mut() {
-            behavior.update(&mut app, &Default::default());
-        }
-        if let true = *app.should_exit.lock().unwrap() {
-            break;
-        }
-    }
-    // app.go();
+    let mut rt = DGRuntime::default();
+
+    let behaviors: Vec<Box<dyn Behavior>> = vec![
+        GremlinDrag::new(),
+        CommonBehavior::new(),
+        GremlinMovement::new(),
+        GremlinRender::new(),
+        GremlinClick::new(),
+    ];
+    rt.register_behaviors(behaviors);
+    rt.go();
 }

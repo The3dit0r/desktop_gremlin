@@ -4,7 +4,7 @@ use sdl3::rect::Point;
 
 use crate::{
     behavior::ContextData,
-    events::{Event,  MouseButton},
+    events::{Event, EventData, MouseButton},
     gremlin::{DesktopGremlin, GremlinTask},
     utils::{DirectionX, DirectionY, get_cursor_position, get_move_direction, win_to_rect},
 };
@@ -37,6 +37,10 @@ impl super::Behavior for GremlinMovement {
         if let Some(_) = context.events.get(&Event::Click {
             mouse_btn: MouseButton::Left,
         }) {
+            if !self.is_active {
+                self.last_moved_at = Instant::now();
+            }
+
             self.is_active = !self.is_active;
         }
         if let Some(_) = context.events.get(&Event::DragStart {
@@ -113,7 +117,22 @@ impl super::Behavior for GremlinMovement {
                         as i32,
                 ),
             );
+
             self.last_moved_at = Instant::now();
         }
+
+        if let Some(Some(EventData::Coordinate { x, y })) = context.events.get(&Event::Window {
+            win_event: crate::events::WindowEvent::Moved,
+        }) {
+            let (x_ref, y_ref) = &mut self.current_position;
+            *x_ref = *x;
+            *y_ref = *y;
+        }
+    }
+}
+
+impl GremlinMovement {
+    pub fn new() -> Box<Self> {
+        Default::default()
     }
 }

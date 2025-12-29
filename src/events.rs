@@ -22,6 +22,10 @@ pub enum Event {
 #[derive(PartialEq, Debug)]
 pub enum EventData {
     Coordinate {
+        x: i32,
+        y: i32,
+    },
+    FCoordinate {
         x: f32,
         y: f32,
     },
@@ -44,7 +48,7 @@ pub enum MouseButton {
 }
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum WindowEvent {
-    Moved(i32, i32),
+    Moved,
     Unhandled,
 }
 
@@ -71,7 +75,7 @@ impl From<sdl3::event::Event> for Event {
 impl From<sdl3::event::WindowEvent> for WindowEvent {
     fn from(value: sdl3::event::WindowEvent) -> Self {
         match value {
-            sdl3::event::WindowEvent::Moved(x, y) => WindowEvent::Moved(x, y),
+            sdl3::event::WindowEvent::Moved(x, y) => WindowEvent::Moved,
             _ => WindowEvent::Unhandled,
         }
     }
@@ -89,11 +93,13 @@ impl From<sdl3::mouse::MouseButton> for MouseButton {
         }
     }
 }
-
+#[derive(Debug, Default)]
 pub struct EventMediator {
     mouse: MouseState,
     should_check_drag: bool,
 }
+#[derive(Debug, Default)]
+
 struct MouseState {
     down: MouseKeysState,
     dragging: MouseKeysState,
@@ -149,12 +155,12 @@ impl EventMediator {
                         parsed_ev = Some(Event::Click {
                             mouse_btn: mouse_btn.into(),
                         });
-                        ev_data = Some(EventData::Coordinate { x, y });
+                        ev_data = Some(EventData::FCoordinate { x, y });
                     } else if self.mouse.dragging.is_active(&(mouse_btn.into())) {
                         parsed_ev = Some(Event::DragEnd {
                             mouse_btn: mouse_btn.into(),
                         });
-                        ev_data = Some(EventData::Coordinate { x, y });
+                        ev_data = Some(EventData::FCoordinate { x, y });
                     }
 
                     self.mouse.reset_key(mouse_btn.into());
@@ -182,7 +188,7 @@ impl EventMediator {
                         if is_down && !is_dragging {
                             event_set.insert(
                                 Event::DragStart { mouse_btn: btn },
-                                Some(EventData::Coordinate { x, y }),
+                                Some(EventData::FCoordinate { x, y }),
                             );
                             self.mouse.dragging.set_button(&btn, true);
                         }
@@ -198,6 +204,13 @@ impl EventMediator {
                             );
                         }
                     }
+                }
+
+                SdlEvent::Window {
+                    win_event: sdl3::event::WindowEvent::Moved(x, y),
+                    ..
+                } => {
+                    let _ = ev_data.insert(EventData::Coordinate { x, y });
                 }
                 _ => {}
             }

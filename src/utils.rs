@@ -1,10 +1,17 @@
-use std::{collections::HashMap, fs::read_dir, io, path::PathBuf};
+use std::{
+    collections::{HashMap, VecDeque},
+    fs::read_dir,
+    io,
+    path::PathBuf,
+    rc::Rc,
+};
 
 use image::{DynamicImage, EncodableLayout};
 use sdl3::{
     EventPump,
     pixels::PixelFormat,
     rect::{Point, Rect},
+    render::Texture,
     sys::mouse::SDL_GetGlobalMouseState,
     video::Window,
 };
@@ -12,7 +19,8 @@ use sdl3::{
 use crate::{
     events::MouseButton,
     gremlin::{
-        AnimationProperties, DEFAULT_COLUMN_COUNT, GLOBAL_PIXEL_FORMAT, SizeUnit, SpriteError,
+        AnimationProperties, Animator, DEFAULT_COLUMN_COUNT, GLOBAL_PIXEL_FORMAT, SizeUnit,
+        SpriteError,
     },
 };
 
@@ -205,3 +213,47 @@ pub fn win_to_rect(window: &Window) -> Rect {
     let (w, h) = window.size();
     Rect::new(x, y, w, h)
 }
+
+#[derive(Default)]
+pub struct TextureCache {
+    pub data: VecDeque<(String, TextureCacheItem)>,
+}
+// /
+type TextureCacheItem = (Animator, Rc<Texture>);
+
+impl TextureCache {
+    // rearrange to purge cache later with a LRU policy
+    pub fn rearrange(&mut self, access_index: usize) {
+        if let Some(item) = self.data.remove(access_index) {
+            self.data.push_back(item);
+        }
+    }
+
+    pub fn print(&self) {
+        let mut res = String::new();
+        for (name, _) in &self.data {
+            res += &(name.to_owned() + " ");
+        }
+        println!("{}", res)
+    }
+    pub fn cache(&mut self, name: String, texture: TextureCacheItem) {
+        match &self.data.len() {
+            CACHE_CAPACITY.. => {
+                self.data.pop_front();
+            }
+            _ => (),
+        }
+        self.data.push_back((name, texture));
+    }
+
+    pub fn lookup(&self, name: String) -> Option<(usize, TextureCacheItem)> {
+        self.data
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|a| a.1.0 == name)
+            .map(|a| (a.0, a.1.1.clone()))
+    }
+}
+
+const CACHE_CAPACITY: usize = 10;
