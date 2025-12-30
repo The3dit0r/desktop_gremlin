@@ -1,7 +1,8 @@
 use super::Behavior;
 use crate::behavior::ContextData;
 use crate::events::{Event, EventData, MouseButton};
-use crate::gremlin::{DesktopGremlin, GremlinTask, get_window_pos};
+use crate::gremlin::{DesktopGremlin, GremlinTask};
+use crate::utils::get_window_pos;
 
 #[derive(Default, Debug, Clone)]
 pub struct GremlinDrag {

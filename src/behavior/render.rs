@@ -123,7 +123,6 @@ impl Behavior for GremlinRender {
                         self.current_animation_name = animation_name;
                     }
                 }
-                _ => {}
             }
         }
 

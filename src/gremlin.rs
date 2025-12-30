@@ -4,7 +4,6 @@ use std::{
     fs::{self},
     io,
     path::{Path, PathBuf},
-    rc::Rc,
     str::FromStr,
     sync::{
         Arc, Mutex,
@@ -13,16 +12,14 @@ use std::{
 };
 
 use anyhow::Result;
-use bad_signals::signals::{common::Signalable, signals::Signal};
 use image::{DynamicImage, EncodableLayout};
 // absolutely goated.
 use sdl3::{
     // might move to winit & wgpu but,... ehhhhhhhhh too lazy.... i love sdl
     Sdl,
-    gpu::ShaderFormat,
-    pixels::{Color, PixelFormat},
+    pixels::PixelFormat,
     rect::Rect,
-    render::{Canvas, FRect, Texture, TextureCreator},
+    render::{Canvas, Texture, TextureCreator},
     sys::{
         properties::SDL_GetPointerProperty,
         video::{SDL_GetWindowProperties, SDL_PROP_WINDOW_WIN32_HWND_POINTER},
@@ -41,12 +38,7 @@ use windows::Win32::{
 
 pub const GLOBAL_PIXEL_FORMAT: PixelFormat = PixelFormat::RGBA32;
 
-use crate::{
-    behavior::Behavior,
-    io::AsyncAnimationLoader,
-    ui::Render,
-    utils::{DirectionX, DirectionY, TextureCache, get_png_list},
-};
+use crate::utils::get_png_list;
 
 #[derive(Debug, Clone)]
 pub struct SpriteSheet {
@@ -297,8 +289,6 @@ impl DesktopGremlin {
 
         let canvas = window.into_canvas();
 
-        let usable_bounds = video.get_primary_display()?.get_usable_bounds()?;
-
         Ok(DesktopGremlin {
             sdl,
             current_gremlin: None,
@@ -369,117 +359,6 @@ impl DesktopGremlin {
 pub enum GremlinTask {
     Play(String),
     PlayInterrupt(String),
-    Goto(i32, i32),
-}
-
-// impl Into<Rect> for FRect {
-pub fn into_rect(f_rect: FRect) -> Rect {
-    Rect::new(
-        f_rect.x as i32,
-        f_rect.y as i32,
-        f_rect.w as u32,
-        f_rect.h as u32,
-    )
-}
-pub fn into_opt_rect(f_rect: Option<FRect>) -> Option<Rect> {
-    if let Some(f_rect) = f_rect {
-        return Some(Rect::new(
-            f_rect.x as i32,
-            f_rect.y as i32,
-            f_rect.w as u32,
-            f_rect.h as u32,
-        ));
-    }
-    None
-}
-
-pub fn get_window_pos(canvas: &Canvas<Window>) -> (i32, i32) {
-    canvas.window().position()
-}
-
-pub fn into_frect(rect: Rect) -> FRect {
-    FRect {
-        x: rect.x as f32,
-        y: rect.y as f32,
-        w: rect.w as f32,
-        h: rect.h as f32,
-    }
-}
-// }
-
-pub struct Button {
-    color: Color,
-    width: SizeUnit,
-    height: SizeUnit,
-    on_click: Signal<()>,
-}
-
-impl Default for Button {
-    fn default() -> Self {
-        Self {
-            color: Color::BLACK,
-            width: SizeUnit::Percentage(100),
-            height: SizeUnit::Pixel(100),
-            on_click: Signal::new(()),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum SizeUnit {
-    Pixel(u32),
-    Percentage(u32),
-}
-
-impl SizeUnit {
-    pub fn pix(w: u32, h: u32) -> (SizeUnit, SizeUnit) {
-        (SizeUnit::Pixel(w), SizeUnit::Pixel(h))
-    }
-    pub fn percentage(w: u32, h: u32) -> (SizeUnit, SizeUnit) {
-        (SizeUnit::Percentage(w), SizeUnit::Percentage(h))
-    }
-}
-
-impl Render for Button {
-    fn render(
-        &self,
-        texture: &mut Texture,
-        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
-    ) -> Result<()> {
-        let _ = texture.with_lock(into_opt_rect(rect), |buf, _| {
-            for i in 0..buf.len() {
-                match i % 4 {
-                    0 => {
-                        buf[i] = self.color.r;
-                    }
-                    1 => {
-                        buf[i] = self.color.g;
-                    }
-                    2 => {
-                        buf[i] = self.color.b;
-                    }
-                    3 => {
-                        buf[i] = self.color.a;
-                    }
-                    _ => {}
-                }
-            }
-        });
-        Ok(())
-    }
-
-    fn render_canvas(
-        &self,
-        canvas: &mut Canvas<Window>,
-        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
-    ) -> Result<()> {
-        let color = canvas.draw_color();
-        canvas.set_draw_color(self.color);
-        canvas.fill_rect(rect).unwrap();
-        canvas.set_draw_color(color);
-
-        Ok(())
-    }
 }
 
 #[derive(Debug)]
@@ -497,15 +376,6 @@ pub struct Animation {
     pub sprite_sheet: SpriteSheet,
     pub current_frame: u16,
     pub properties: AnimationProperties,
-}
-
-#[derive(Clone, Copy, Debug, Hash)]
-pub enum AnimationKind {
-    Walk(DirectionX, DirectionY),
-    Intro,
-    Idle,
-    Exit,
-    Hover,
 }
 
 #[derive(Default, Clone, Hash, Debug)]

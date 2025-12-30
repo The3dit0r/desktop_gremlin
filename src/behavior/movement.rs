@@ -53,7 +53,7 @@ impl super::Behavior for GremlinMovement {
         }) {
             self.is_dragging = true;
         }
-        if let Some(Some(EventData::FCoordinate { x, y })) = context.events.get(&Event::DragEnd {
+        if let Some(Some(EventData::FCoordinate { .. })) = context.events.get(&Event::DragEnd {
             mouse_btn: MouseButton::Left,
         }) {
             self.is_dragging = false;

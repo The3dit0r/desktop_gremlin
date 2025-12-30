@@ -1,9 +1,15 @@
+use bad_signals::signals::{common::Signalable, signals::Signal};
 use image::DynamicImage;
+use sdl3::{
+    pixels::Color,
+    render::{Canvas, FRect, Texture},
+    video::Window,
+};
 
 use crate::{
-    gremlin::{GLOBAL_PIXEL_FORMAT, into_opt_rect},
+    gremlin::GLOBAL_PIXEL_FORMAT,
     ui::{Composable, Notify, Render},
-    utils::img_get_bytes_global,
+    utils::{img_get_bytes_global, into_opt_rect},
 };
 
 pub struct Image {
@@ -61,10 +67,85 @@ impl Render for Image {
 }
 
 impl Notify for Image {
-    fn notify(&self, event: super::ComponentEvent) {}
+    fn notify(&self, _: super::ComponentEvent) {}
 }
 
 impl Composable for Image {}
 
 // kinda too lazy to implement this rn so maybe later
 pub struct LazyImage {}
+
+pub struct Button {
+    pub color: Color,
+    pub width: SizeUnit,
+    pub height: SizeUnit,
+    pub on_click: Signal<()>,
+}
+
+impl Default for Button {
+    fn default() -> Self {
+        Self {
+            color: Color::BLACK,
+            width: SizeUnit::Percentage(100),
+            height: SizeUnit::Pixel(100),
+            on_click: Signal::new(()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum SizeUnit {
+    Pixel(u32),
+    Percentage(u32),
+}
+
+impl SizeUnit {
+    pub fn pix(w: u32, h: u32) -> (SizeUnit, SizeUnit) {
+        (SizeUnit::Pixel(w), SizeUnit::Pixel(h))
+    }
+    pub fn percentage(w: u32, h: u32) -> (SizeUnit, SizeUnit) {
+        (SizeUnit::Percentage(w), SizeUnit::Percentage(h))
+    }
+}
+
+impl Render for Button {
+    fn render(
+        &self,
+        texture: &mut Texture,
+        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
+    ) -> anyhow::Result<()> {
+        let _ = texture.with_lock(into_opt_rect(rect), |buf, _| {
+            for i in 0..buf.len() {
+                match i % 4 {
+                    0 => {
+                        buf[i] = self.color.r;
+                    }
+                    1 => {
+                        buf[i] = self.color.g;
+                    }
+                    2 => {
+                        buf[i] = self.color.b;
+                    }
+                    3 => {
+                        buf[i] = self.color.a;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        Ok(())
+    }
+
+    fn render_canvas(
+        &self,
+        canvas: &mut Canvas<Window>,
+        rect: Option<FRect>, // styles: Option<Vec<RenderStyle>>
+    ) -> anyhow::Result<()> {
+        let color = canvas.draw_color();
+        canvas.set_draw_color(self.color);
+        canvas.fill_rect(rect).unwrap();
+        canvas.set_draw_color(color);
+
+        Ok(())
+    }
+}

@@ -75,7 +75,7 @@ impl From<sdl3::event::Event> for Event {
 impl From<sdl3::event::WindowEvent> for WindowEvent {
     fn from(value: sdl3::event::WindowEvent) -> Self {
         match value {
-            sdl3::event::WindowEvent::Moved(x, y) => WindowEvent::Moved,
+            sdl3::event::WindowEvent::Moved(_, _) => WindowEvent::Moved,
             _ => WindowEvent::Unhandled,
         }
     }
@@ -96,7 +96,6 @@ impl From<sdl3::mouse::MouseButton> for MouseButton {
 #[derive(Debug, Default)]
 pub struct EventMediator {
     mouse: MouseState,
-    should_check_drag: bool,
 }
 #[derive(Debug, Default)]
 
@@ -106,6 +105,7 @@ struct MouseState {
 }
 
 impl MouseState {
+    #[allow(unused)]
     pub fn any_down(&self) -> bool {
         self.down.left || self.down.right || self.down.middle
     }
@@ -142,9 +142,7 @@ impl EventMediator {
             let mut parsed_ev: Option<Event> = None;
             let mut ev_data: Option<EventData> = None;
             match event {
-                SdlEvent::MouseButtonDown {
-                    mouse_btn, x, y, ..
-                } => {
+                SdlEvent::MouseButtonDown { mouse_btn, .. } => {
                     self.mouse.down.set_button(&(mouse_btn.into()), true);
                 }
 

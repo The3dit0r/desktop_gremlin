@@ -4,15 +4,13 @@ use std::{
     io,
     path::PathBuf,
     rc::Rc,
-    time::Instant,
 };
 
 use image::{DynamicImage, EncodableLayout};
 use sdl3::{
-    gpu::{BlitInfo, Device, TextureCreateInfo, TextureFormat, TextureType, TextureUsage},
     pixels::PixelFormat,
     rect::{Point, Rect},
-    render::{Canvas, ScaleMode, Texture},
+    render::{Canvas, FRect, Texture},
     surface::Surface,
     sys::{mouse::SDL_GetGlobalMouseState, surface::SDL_ScaleMode},
     video::Window,
@@ -20,13 +18,11 @@ use sdl3::{
 
 use crate::{
     events::MouseButton,
-    gremlin::{
-        AnimationProperties, Animator, DEFAULT_COLUMN_COUNT, GLOBAL_PIXEL_FORMAT, SizeUnit,
-        SpriteError,
-    },
+    gremlin::{Animator, GLOBAL_PIXEL_FORMAT, SpriteError},
+    ui::widgets::SizeUnit,
 };
 
-pub fn inflate(point: Point, x: u32, y: u32) -> Rect {
+pub fn _inflate(point: Point, x: u32, y: u32) -> Rect {
     Rect::new(
         (point.x as i32).saturating_sub(x.saturating_div(2) as i32),
         (point.y as i32).saturating_sub(y.saturating_div(2) as i32),
@@ -34,6 +30,7 @@ pub fn inflate(point: Point, x: u32, y: u32) -> Rect {
         y,
     )
 }
+
 pub fn get_png_list(
     dir: &str,
     max_depth: u16,
@@ -180,6 +177,40 @@ pub enum DirectionY {
     None,
     Up,
     Down,
+}
+
+// impl Into<Rect> for FRect {
+pub fn into_rect(f_rect: FRect) -> Rect {
+    Rect::new(
+        f_rect.x as i32,
+        f_rect.y as i32,
+        f_rect.w as u32,
+        f_rect.h as u32,
+    )
+}
+pub fn into_opt_rect(f_rect: Option<FRect>) -> Option<Rect> {
+    if let Some(f_rect) = f_rect {
+        return Some(Rect::new(
+            f_rect.x as i32,
+            f_rect.y as i32,
+            f_rect.w as u32,
+            f_rect.h as u32,
+        ));
+    }
+    None
+}
+
+pub fn get_window_pos(canvas: &Canvas<Window>) -> (i32, i32) {
+    canvas.window().position()
+}
+
+pub fn into_frect(rect: Rect) -> FRect {
+    FRect {
+        x: rect.x as f32,
+        y: rect.y as f32,
+        w: rect.w as f32,
+        h: rect.h as f32,
+    }
 }
 
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash)]

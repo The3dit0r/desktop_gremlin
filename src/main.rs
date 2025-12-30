@@ -5,7 +5,7 @@ mod events;
 mod gremlin;
 mod io;
 mod runtime;
-mod ui;
+pub mod ui;
 mod utils;
 
 fn main() {

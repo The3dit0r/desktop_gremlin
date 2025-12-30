@@ -10,14 +10,14 @@ use sdl3::{
 pub mod widgets;
 
 use crate::{
-    gremlin::{SizeUnit, into_frect, into_opt_rect, into_rect},
-    utils::calculate_pix_from_parent,
+    ui::widgets::SizeUnit,
+    utils::{calculate_pix_from_parent, into_frect, into_rect},
 };
 
 pub struct Component {
     rendered_by: Box<dyn Composable>,
-    location: Rect,
-    event_listeners: HashSet<Signal<ComponentEvent>>,
+    _location: Rect,
+    _event_listeners: HashSet<Signal<ComponentEvent>>,
     children: Vec<Component>,
     preferred_size: (SizeUnit, SizeUnit),
 }
@@ -26,8 +26,8 @@ impl Component {
     pub fn new(renderable: Box<dyn Composable>) -> Self {
         Component {
             rendered_by: renderable,
-            location: Rect::new(0, 0, 0, 0),
-            event_listeners: Default::default(),
+            _location: Rect::new(0, 0, 0, 0),
+            _event_listeners: Default::default(),
             children: Default::default(),
             preferred_size: (SizeUnit::Percentage(100), SizeUnit::Percentage(100)),
         }
@@ -167,7 +167,7 @@ impl Render for Div {
                             .1 as f32;
                         }
                     },
-                    _ => {}
+                    // _ => {}
                 }
             }
         }
@@ -331,7 +331,7 @@ impl Render for UI {
     }
 }
 
-struct Button {
+pub struct Button {
     div: Div,
 }
 
